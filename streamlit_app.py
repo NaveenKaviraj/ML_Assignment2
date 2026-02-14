@@ -1,369 +1,256 @@
-
 import streamlit as st
 import pandas as pd
-import numpy as np
-from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import StandardScaler, LabelEncoder
+import seaborn as sns
+import matplotlib.pyplot as plt
+from sklearn.model_selection import train_test_split, learning_curve
+from sklearn.preprocessing import LabelEncoder, StandardScaler
+from sklearn.metrics import (
+    accuracy_score, roc_auc_score, precision_score,
+    recall_score, f1_score, matthews_corrcoef,
+    confusion_matrix
+)
 from sklearn.linear_model import LogisticRegression
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.naive_bayes import GaussianNB
-from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
-from sklearn.metrics import (accuracy_score, roc_auc_score, precision_score, 
-                             recall_score, f1_score, matthews_corrcoef,
-                             confusion_matrix, classification_report)
-import matplotlib.pyplot as plt
-import seaborn as sns
-import warnings
-warnings.filterwarnings('ignore')
+from sklearn.ensemble import RandomForestClassifier
+from xgboost import XGBClassifier
 
-# Page configuration
-st.set_page_config(page_title="Loan Status Classifier", layout="wide")
 
-# Title and description
-st.title("🏦 Loan Default Classification Model")
-st.markdown("---")
-st.markdown("""
-This application demonstrates six machine learning classification models trained on loan data 
-to predict whether a loan applicant will default or not.
-""")
+st.set_page_config(page_title="ML Assignment 2", layout="centered")
+st.title("Loan Default Prediction – ML Assignment 2")
 
-# Load and prepare data
-@st.cache_resource
-def load_and_prepare_data():
-    """Load and preprocess the loan dataset"""
-    try:
-        df = pd.read_csv('loan_data.csv')
-    except:
-        st.error("Dataset not found!")
-        return None, None, None, None, None, None
 
-    df_processed = df.copy()
+uploaded = st.file_uploader("Upload loan_data.csv", type=["csv"])
+df = pd.read_csv(uploaded if uploaded else "loan_data.csv")
 
-    # Handle categorical columns
-    categorical_cols = df_processed.select_dtypes(include=['object']).columns
-    le_dict = {}
+st.subheader("Dataset Preview")
+st.dataframe(df.head(), use_container_width=True)
 
-    for col in categorical_cols:
-        if col != 'loan_status':
-            le = LabelEncoder()
-            df_processed[col] = le.fit_transform(df_processed[col].astype(str))
-            le_dict[col] = le
 
-    # Handle previous_loan_defaults_on_file
-    if df_processed['previous_loan_defaults_on_file'].dtype == 'object':
-        le_defaults = LabelEncoder()
-        df_processed['previous_loan_defaults_on_file'] = le_defaults.fit_transform(df_processed['previous_loan_defaults_on_file'])
+st.subheader("Target Column Selection")
 
-    # Separate features and target
-    X = df_processed.drop('loan_status', axis=1)
-    y = df_processed['loan_status']
+default_index = 0
+if "loan_status" in df.columns:
+    default_index = list(df.columns).index("loan_status")
 
-    # Split data
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, 
-                                                          random_state=42, stratify=y)
+target = st.selectbox(
+    "Select the target column",
+    options=df.columns.tolist(),
+    index=default_index,
+    help="Choose the column you want to predict"
+)
 
-    # Scale features
-    scaler = StandardScaler()
-    X_train_scaled = scaler.fit_transform(X_train)
-    X_test_scaled = scaler.transform(X_test)
+st.success(f"✅ Selected target column: **{target}**")
 
-    return X_train_scaled, X_test_scaled, y_train, y_test, scaler, X
 
-# Train models
-@st.cache_resource
-def train_models(X_train, X_test, y_train, y_test):
-    """Train all 6 classification models"""
-    models = {}
-    results = []
-    predictions = {}
+@st.dialog("Dataset Overview", width="large")
+def show_dataset_overview():
+    st.markdown("### Basic Information")
+    c1, c2 = st.columns(2)
+    with c1:
+        st.write("Rows:", df.shape[0])
+        st.write("Columns:", df.shape[1])
+    with c2:
+        st.write("Target Column:", target)
+    
+    st.markdown("### Column Names")
+    st.write(list(df.columns))
+    
+    st.markdown("### Data Types")
+    st.dataframe(
+        df.dtypes.reset_index().rename(
+            columns={"index": "Column", 0: "Data Type"}
+        ),
+        use_container_width=True
+    )
+    
+    st.markdown("### Missing Values")
+    st.dataframe(
+        df.isnull().sum().reset_index().rename(
+            columns={"index": "Column", 0: "Missing Count"}
+        ),
+        use_container_width=True
+    )
+    
+    st.markdown("### Statistical Summary")
+    st.dataframe(df.describe().round(2), use_container_width=True)
+    
+    st.markdown("### Target Distribution")
+    st.bar_chart(df[target].value_counts())
+    
+    st.markdown("### Sample Records")
+    st.dataframe(df.head(10), use_container_width=True)
+    
+    if st.button("❌ Close"):
+        st.rerun()
 
-    # 1. Logistic Regression
-    lr = LogisticRegression(max_iter=1000, random_state=42)
-    lr.fit(X_train, y_train)
-    y_pred = lr.predict(X_test)
-    y_proba = lr.predict_proba(X_test)[:, 1]
-    models['Logistic Regression'] = lr
-    predictions['Logistic Regression'] = (y_pred, y_proba)
+if st.button("📊 Show Dataset Overview"):
+    show_dataset_overview()
 
-    results.append({
-        'Model': 'Logistic Regression',
-        'Accuracy': accuracy_score(y_test, y_pred),
-        'AUC': roc_auc_score(y_test, y_proba),
-        'Precision': precision_score(y_test, y_pred),
-        'Recall': recall_score(y_test, y_pred),
-        'F1 Score': f1_score(y_test, y_pred),
-        'MCC': matthews_corrcoef(y_test, y_pred)
-    })
 
-    # 2. Decision Tree
-    dt = DecisionTreeClassifier(max_depth=15, random_state=42)
-    dt.fit(X_train, y_train)
-    y_pred = dt.predict(X_test)
-    y_proba = dt.predict_proba(X_test)[:, 1]
-    models['Decision Tree'] = dt
-    predictions['Decision Tree'] = (y_pred, y_proba)
+X = df.drop(columns=[target])
+y = df[target]
 
-    results.append({
-        'Model': 'Decision Tree',
-        'Accuracy': accuracy_score(y_test, y_pred),
-        'AUC': roc_auc_score(y_test, y_proba),
-        'Precision': precision_score(y_test, y_pred),
-        'Recall': recall_score(y_test, y_pred),
-        'F1 Score': f1_score(y_test, y_pred),
-        'MCC': matthews_corrcoef(y_test, y_pred)
-    })
+num_cols = X.select_dtypes(include=["int64", "float64"]).columns
+cat_cols = X.select_dtypes(include="object").columns
 
-    # 3. K-Nearest Neighbor
-    knn = KNeighborsClassifier(n_neighbors=5)
-    knn.fit(X_train, y_train)
-    y_pred = knn.predict(X_test)
-    y_proba = knn.predict_proba(X_test)[:, 1]
-    models['K-Nearest Neighbor'] = knn
-    predictions['K-Nearest Neighbor'] = (y_pred, y_proba)
+X[num_cols] = X[num_cols].fillna(X[num_cols].median())
+for col in cat_cols:
+    X[col] = X[col].fillna(X[col].mode()[0])
+y = y.fillna(y.mode()[0])
 
-    results.append({
-        'Model': 'K-Nearest Neighbor',
-        'Accuracy': accuracy_score(y_test, y_pred),
-        'AUC': roc_auc_score(y_test, y_proba),
-        'Precision': precision_score(y_test, y_pred),
-        'Recall': recall_score(y_test, y_pred),
-        'F1 Score': f1_score(y_test, y_pred),
-        'MCC': matthews_corrcoef(y_test, y_pred)
-    })
+for col in cat_cols:
+    X[col] = LabelEncoder().fit_transform(X[col])
 
-    # 4. Naive Bayes
-    nb = GaussianNB()
-    nb.fit(X_train, y_train)
-    y_pred = nb.predict(X_test)
-    y_proba = nb.predict_proba(X_test)[:, 1]
-    models['Naive Bayes'] = nb
-    predictions['Naive Bayes'] = (y_pred, y_proba)
+y = LabelEncoder().fit_transform(y)
 
-    results.append({
-        'Model': 'Naive Bayes',
-        'Accuracy': accuracy_score(y_test, y_pred),
-        'AUC': roc_auc_score(y_test, y_proba),
-        'Precision': precision_score(y_test, y_pred),
-        'Recall': recall_score(y_test, y_pred),
-        'F1 Score': f1_score(y_test, y_pred),
-        'MCC': matthews_corrcoef(y_test, y_pred)
-    })
+assert X.isnull().sum().sum() == 0, "NaNs still present in X!"
 
-    # 5. Random Forest
-    rf = RandomForestClassifier(n_estimators=100, max_depth=20, random_state=42, n_jobs=-1)
-    rf.fit(X_train, y_train)
-    y_pred = rf.predict(X_test)
-    y_proba = rf.predict_proba(X_test)[:, 1]
-    models['Random Forest'] = rf
-    predictions['Random Forest'] = (y_pred, y_proba)
 
-    results.append({
-        'Model': 'Random Forest',
-        'Accuracy': accuracy_score(y_test, y_pred),
-        'AUC': roc_auc_score(y_test, y_proba),
-        'Precision': precision_score(y_test, y_pred),
-        'Recall': recall_score(y_test, y_pred),
-        'F1 Score': f1_score(y_test, y_pred),
-        'MCC': matthews_corrcoef(y_test, y_pred)
-    })
+X_train, X_temp, y_train, y_temp = train_test_split(
+    X, y,
+    test_size=0.30, 
+    random_state=42,
+    stratify=y
+)
 
-    # 6. Gradient Boosting
-    gb = GradientBoostingClassifier(n_estimators=100, learning_rate=0.1, max_depth=5, random_state=42)
-    gb.fit(X_train, y_train)
-    y_pred = gb.predict(X_test)
-    y_proba = gb.predict_proba(X_test)[:, 1]
-    models['Gradient Boosting'] = gb
-    predictions['Gradient Boosting'] = (y_pred, y_proba)
+X_val, X_test, y_val, y_test = train_test_split(
+    X_temp, y_temp,
+    test_size=0.50,
+    random_state=42,
+    stratify=y_temp
+)
 
-    results.append({
-        'Model': 'Gradient Boosting',
-        'Accuracy': accuracy_score(y_test, y_pred),
-        'AUC': roc_auc_score(y_test, y_proba),
-        'Precision': precision_score(y_test, y_pred),
-        'Recall': recall_score(y_test, y_pred),
-        'F1 Score': f1_score(y_test, y_pred),
-        'MCC': matthews_corrcoef(y_test, y_pred)
-    })
 
-    results_df = pd.DataFrame(results)
-    return models, predictions, results_df, y_test
+scaler = StandardScaler()
+X_train = scaler.fit_transform(X_train)
+X_val = scaler.transform(X_val)
+X_test = scaler.transform(X_test)
 
-# Load data
-data_result = load_and_prepare_data()
-if data_result[0] is not None:
-    X_train_scaled, X_test_scaled, y_train, y_test, scaler, X = data_result
 
-    # Train models
-    models, predictions, results_df, y_test_final = train_models(X_train_scaled, X_test_scaled, y_train, y_test)
+models = {
+    "Logistic Regression": LogisticRegression(max_iter=1000),
+    "Decision Tree": DecisionTreeClassifier(),
+    "KNN": KNeighborsClassifier(),   # fixed
+    "Naive Bayes": GaussianNB(),
+    "Random Forest": RandomForestClassifier(),
+    "XGBoost": XGBClassifier(eval_metric="logloss")
+}
 
-    # Sidebar for navigation
-    st.sidebar.title("📊 Navigation")
-    page = st.sidebar.radio("Select Page", ["Overview", "Model Comparison", "Model Details", "About Dataset"])
 
-    if page == "Overview":
-        st.header("📋 Project Overview")
-
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            st.metric("Total Samples", "45,000")
-        with col2:
-            st.metric("Test Samples", f"{len(y_test_final):,}")
-        with col3:
-            st.metric("Number of Features", "13")
-
-        st.subheader("🎯 Project Objective")
-        st.write("""
-        This machine learning project implements 6 different classification algorithms to predict 
-        loan default status. The models are trained on historical loan data and evaluated using 
-        multiple performance metrics.
-        """)
-
-        st.subheader("📈 Models Implemented")
-        model_list = """
-        1. **Logistic Regression** - Linear model for binary classification
-        2. **Decision Tree** - Tree-based model capturing non-linear relationships
-        3. **K-Nearest Neighbor** - Instance-based learning approach
-        4. **Naive Bayes** - Probabilistic model based on Bayes' theorem
-        5. **Random Forest** - Ensemble of decision trees
-        6. **Gradient Boosting** - Sequential boosting ensemble method
-        """
-        st.markdown(model_list)
-
-    elif page == "Model Comparison":
-        st.header("📊 Model Comparison")
-
-        # Display results table
-        st.subheader("Performance Metrics Comparison")
-        st.dataframe(results_df.style.format({
-            'Accuracy': '{:.4f}',
-            'AUC': '{:.4f}',
-            'Precision': '{:.4f}',
-            'Recall': '{:.4f}',
-            'F1 Score': '{:.4f}',
-            'MCC': '{:.4f}'
-        }), use_container_width=True)
-
-        # Best performers
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            best_acc = results_df.loc[results_df['Accuracy'].idxmax()]
-            st.metric("Best Accuracy", f"{best_acc['Accuracy']:.4f}", 
-                     f"({best_acc['Model']})")
-        with col2:
-            best_f1 = results_df.loc[results_df['F1 Score'].idxmax()]
-            st.metric("Best F1 Score", f"{best_f1['F1 Score']:.4f}", 
-                     f"({best_f1['Model']})")
-        with col3:
-            best_auc = results_df.loc[results_df['AUC'].idxmax()]
-            st.metric("Best AUC", f"{best_auc['AUC']:.4f}", 
-                     f"({best_auc['Model']})")
-
-        # Visualization
-        st.subheader("📉 Performance Visualization")
-        metrics_to_plot = st.multiselect(
-            "Select metrics to visualize:",
-            ['Accuracy', 'AUC', 'Precision', 'Recall', 'F1 Score', 'MCC'],
-            default=['Accuracy', 'F1 Score']
+@st.cache_data(show_spinner=True)
+def train_all_models(X_train, X_val, X_test, y_train, y_val, y_test):
+    trained = {}
+    metrics_all = {}
+    learning_curves = {}
+    
+    for name, model in models.items():
+        model.fit(X_train, y_train)
+        
+        y_test_pred = model.predict(X_test)
+        y_test_prob = model.predict_proba(X_test)[:, 1]
+        
+        y_val_pred = model.predict(X_val)
+        val_acc = accuracy_score(y_val, y_val_pred)
+        
+        trained[name] = {
+            "y_pred": y_test_pred
+        }
+        
+        metrics_all[name] = {
+            "Model": name,
+            "Accuracy": accuracy_score(y_test, y_test_pred),
+            "Validation Accuracy": val_acc,
+            "AUC": roc_auc_score(y_test, y_test_prob),
+            "Precision": precision_score(y_test, y_test_pred),
+            "Recall": recall_score(y_test, y_test_pred),
+            "F1-score": f1_score(y_test, y_test_pred),
+            "MCC": matthews_corrcoef(y_test, y_test_pred)
+        }
+        
+        sizes, train_scores, val_scores = learning_curve(
+            model,
+            X_train,
+            y_train,
+            cv=3,
+            scoring="accuracy",
+            train_sizes=[0.2, 0.4, 0.6, 0.8, 1.0]
         )
+        
+        learning_curves[name] = {
+            "sizes": sizes,
+            "train": train_scores.mean(axis=1),
+            "val": val_scores.mean(axis=1)
+        }
+    
+    return trained, metrics_all, learning_curves
 
-        if metrics_to_plot:
-            fig, ax = plt.subplots(figsize=(12, 5))
-            results_df.set_index('Model')[metrics_to_plot].plot(kind='bar', ax=ax)
-            ax.set_title('Model Performance Comparison', fontsize=14, fontweight='bold')
-            ax.set_ylabel('Score', fontsize=12)
-            ax.set_xlabel('Model', fontsize=12)
-            ax.legend(loc='lower right')
-            plt.xticks(rotation=45, ha='right')
-            plt.tight_layout()
-            st.pyplot(fig)
+trained, metrics_all, learning_curves = train_all_models(
+    X_train, X_val, X_test, y_train, y_val, y_test
+)
 
-    elif page == "Model Details":
-        st.header("🔍 Model Details & Confusion Matrices")
 
-        selected_model = st.selectbox(
-            "Select a model to view details:",
-            list(models.keys())
+st.subheader("Model Selection")
+model_option = st.selectbox(
+    "Choose a model",
+    ["-- Select Model --"] + list(models.keys()),
+    index=0
+)
+
+
+if model_option != "-- Select Model --":
+    y_pred_selected = trained[model_option]["y_pred"]
+    metrics = metrics_all[model_option]
+    lc = learning_curves[model_option]
+    
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Test Accuracy", f"{metrics['Accuracy']:.4f}")
+    c2.metric("Validation Accuracy", f"{metrics['Validation Accuracy']:.4f}")
+    c3.metric("AUC", f"{metrics['AUC']:.4f}")
+    
+    c1.metric("Precision", f"{metrics['Precision']:.4f}")
+    c2.metric("Recall", f"{metrics['Recall']:.4f}")
+    c3.metric("F1-score", f"{metrics['F1-score']:.4f}")
+    
+    col1, col2 = st.columns(2)
+    
+
+    with col1:
+        fig, ax = plt.subplots(figsize=(2, 2), dpi=130)
+        cm = confusion_matrix(y_test, y_pred_selected, labels=[1, 0])
+        sns.heatmap(
+            cm,
+            annot=True,
+            fmt="d",
+            cmap="Blues",
+            square=True,
+            cbar=False,
+            ax=ax,
+            annot_kws={"size": 7},
+            xticklabels=[1, 0],
+            yticklabels=[1, 0]
         )
+        ax.xaxis.tick_top()
+        ax.xaxis.set_label_position("top")
+        ax.set_xlabel("Predicted Class", fontsize=7)
+        ax.set_ylabel("True Class", fontsize=7)
+        ax.tick_params(labelsize=6)
+        plt.tight_layout(pad=0.2)
+        st.pyplot(fig)
+    
+    with col2:
+        fig, ax = plt.subplots(figsize=(2, 2), dpi=130)
+        ax.plot(lc["sizes"], lc["train"], marker="o", label="Train")
+        ax.plot(lc["sizes"], lc["val"], marker="o", label="Validation")
+        ax.set_title("Learning Curve", fontsize=8)
+        ax.set_xlabel("Samples", fontsize=7)
+        ax.set_ylabel("Accuracy", fontsize=7)
+        ax.tick_params(labelsize=6)
+        ax.legend(fontsize=6)
+        plt.tight_layout(pad=0.2)
+        st.pyplot(fig)
 
-        if selected_model:
-            # Model metrics
-            model_metrics = results_df[results_df['Model'] == selected_model].iloc[0]
-
-            col1, col2, col3, col4 = st.columns(4)
-            with col1:
-                st.metric("Accuracy", f"{model_metrics['Accuracy']:.4f}")
-            with col2:
-                st.metric("AUC", f"{model_metrics['AUC']:.4f}")
-            with col3:
-                st.metric("F1 Score", f"{model_metrics['F1 Score']:.4f}")
-            with col4:
-                st.metric("MCC", f"{model_metrics['MCC']:.4f}")
-
-            # Confusion Matrix
-            y_pred, _ = predictions[selected_model]
-            cm = confusion_matrix(y_test_final, y_pred)
-
-            fig, ax = plt.subplots(figsize=(8, 6))
-            sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', ax=ax,
-                       xticklabels=['No Default', 'Default'],
-                       yticklabels=['No Default', 'Default'])
-            ax.set_title(f'Confusion Matrix - {selected_model}', fontweight='bold')
-            ax.set_ylabel('True Label')
-            ax.set_xlabel('Predicted Label')
-            st.pyplot(fig)
-
-            # Classification Report
-            st.subheader("Classification Report")
-            report = classification_report(y_test_final, y_pred, 
-                                          target_names=['No Default', 'Default'])
-            st.text(report)
-
-    elif page == "About Dataset":
-        st.header("📚 Dataset Information")
-
-        st.subheader("Dataset Overview")
-        st.write("""
-        **Loan Status Classification Dataset**
-        - **Total Samples:** 45,000
-        - **Features:** 13 (after encoding)
-        - **Target Variable:** loan_status (0 = No Default, 1 = Default)
-        - **Class Distribution:** Imbalanced (77.8% No Default, 22.2% Default)
-        """)
-
-        st.subheader("Features Description")
-        features_desc = pd.DataFrame({
-            'Feature': ['person_age', 'person_gender', 'person_education', 'person_income', 
-                       'person_emp_exp', 'person_home_ownership', 'loan_amnt', 'loan_intent',
-                       'loan_int_rate', 'loan_percent_income', 'cb_person_cred_hist_length',
-                       'credit_score', 'previous_loan_defaults_on_file'],
-            'Description': [
-                'Age of the loan applicant',
-                'Gender of the applicant',
-                'Education level',
-                'Annual income',
-                'Employment experience (years)',
-                'Home ownership status',
-                'Loan amount requested',
-                'Purpose of the loan',
-                'Interest rate on the loan',
-                'Loan as percentage of income',
-                'Credit history length (years)',
-                'Credit score',
-                'Previous loan defaults'
-            ]
-        })
-        st.dataframe(features_desc, use_container_width=True)
-
-        st.subheader("Data Preprocessing Steps")
-        preprocessing_steps = """
-        1. **Encoding:** Categorical variables (gender, education, home ownership, loan intent, 
-           previous defaults) were encoded using LabelEncoder
-        2. **Scaling:** All features were standardized using StandardScaler (mean=0, std=1)
-        3. **Train-Test Split:** 80% training data, 20% test data with stratification
-        4. **Missing Values:** No missing values were found in the dataset
-        """
-        st.markdown(preprocessing_steps)
-
-else:
-    st.error("Unable to load the dataset. Please ensure 'loan_data.csv' is in the correct location.")
+st.subheader("Model Comparison Table (All Models)")
+metrics_df = pd.DataFrame(metrics_all.values()).round(4)
+st.dataframe(metrics_df, use_container_width=True)
