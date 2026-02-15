@@ -54,7 +54,7 @@ Streamlit application for loan default prediction using 6 ML classifiers.
 | Random Forest (Ensemble) | Bagging ensemble of decision trees achieves 92.7% accuracy with highest precision (89.5%). Extremely stable performance (0.15% train/validation gap) and robust AUC (0.972). Feature importance rankings provide model interpretability |
 | XGBoost (Ensemble) | Gradient boosting framework dominates with highest test accuracy (93.5%), F1-score (84.6%), and MCC (80.7%). Perfect precision-recall balance with minimal overfitting. Built-in regularization makes it production deployment choice |
 
-## e. Deployment (Streamlit) - Basic
+## e. Deployment
 ```bash
 pip install streamlit pandas scikit-learn xgboost
 streamlit run streamlit_app.py
