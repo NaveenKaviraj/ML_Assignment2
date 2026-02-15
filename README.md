@@ -59,7 +59,6 @@ Streamlit application for loan default prediction using 6 ML classifiers.
 pip install streamlit pandas scikit-learn xgboost
 streamlit run streamlit_app.py
 ```
-**Access:** http://localhost:8501[file:1][file:3]
 
 ## Notes
 XGBoost recommended for production (superior metrics across board). Complete end-to-end ML pipeline deployed via Streamlit.
