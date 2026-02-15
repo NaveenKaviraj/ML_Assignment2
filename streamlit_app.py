@@ -132,7 +132,7 @@ X_test = scaler.transform(X_test)
 models = {
     "Logistic Regression": LogisticRegression(max_iter=1000),
     "Decision Tree": DecisionTreeClassifier(),
-    "KNN": KNeighborsClassifier(),   # fixed
+    "KNN": KNeighborsClassifier(),
     "Naive Bayes": GaussianNB(),
     "Random Forest": RandomForestClassifier(),
     "XGBoost": XGBClassifier(eval_metric="logloss")
